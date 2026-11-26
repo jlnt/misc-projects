@@ -719,12 +719,28 @@ function nextNotification(timeoutMs){
     S.notifWaiters.push(w);
   });
 }
-async function writeChunks(data){
-  const MTU=20;
-  for(let o=0;o<data.length;o+=MTU){
-    const chunk=data.slice(o,o+MTU);
-    await S.writeCh.writeValueWithResponse(chunk);
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const linkUp=()=>!!(S.device && S.device.gatt && S.device.gatt.connected);
+// Android's Bluetooth stack runs one GATT operation at a time and answers
+// "GATT operation failed for unknown reason" when it is busy, so a failed write
+// is retried a few times before giving up.
+async function writeChunk(chunk){
+  let lastErr;
+  for(let attempt=0;attempt<4;attempt++){
+    try{ await S.writeCh.writeValueWithResponse(chunk); return; }
+    catch(e){ lastErr=e; if(!linkUp()) break; await sleep(80*(attempt+1)); }
   }
+  throw lastErr;
+}
+// Frames are queued and sent one at a time, so two senders (a command, the time
+// sync, a refresh request…) can never overlap or interleave their chunks.
+let writeChain=Promise.resolve();
+function writeChunks(data){
+  const MTU=20;
+  const run=async()=>{ for(let o=0;o<data.length;o+=MTU) await writeChunk(data.slice(o,o+MTU)); };
+  const p=writeChain.then(run,run);
+  writeChain=p.catch(()=>{});
+  return p;
 }
 async function sendPacket(pk){
   const inner=packetToBytes(pk);
@@ -1230,12 +1246,41 @@ $("#btnRefresh").addEventListener("click",async()=>{
 });
 
 /* ---- connect ---- */
+// While a connect is under way the Connect button reads "Cancel", so a second
+// press stops the attempt instead of starting a competing one.
+function setBusy(busy){
+  S.busy=busy;
+  const c=$("#btnConnect"); c.textContent=busy?"Cancel":"Connect"; c.classList.toggle("primary",!busy);
+}
+function cancelConnect(){
+  if(!S.busy || S.cancelled) return;
+  S.cancelled=true; log("Cancelling…"); setConn("work","Cancelling…");
+  try{ if(S.device && S.device.gatt) S.device.gatt.disconnect(); }catch(_){} // also aborts a pending connect
+}
+// Some GATT calls fail on the first try: retry briefly while the link is up.
+async function gattRetry(label,fn,tries){
+  let lastErr;
+  for(let i=0;i<(tries||3);i++){
+    try{ return await fn(); }
+    catch(e){ lastErr=e; if(!linkUp()) break; log("  "+label+" failed ("+e.message+"), retrying…"); await sleep(300*(i+1)); }
+  }
+  throw lastErr;
+}
+// Rejects if a GATT call has not finished in time.
+function withTimeout(promise,ms,label){
+  promise.catch(()=>{}); // an abandoned call rejects later, when the link is closed
+  return Promise.race([promise,new Promise((_,rej)=>setTimeout(()=>rej(new Error(label+" did not finish within "+(ms/1000)+" s")),ms))]);
+}
+
+const MAX_ATTEMPTS=6;
 async function connect(){
+  if(S.busy){ cancelConnect(); return; }
   if(!("bluetooth" in navigator)){ alert("Web Bluetooth isn't available in this browser. Use Chrome or Edge on desktop/Android, or a Web Bluetooth browser on iOS."); return; }
   const uid=$("#userId").value.trim(); const sec=$("#authSecret").value.trim();
   if(!uid && !sec){ alert("Enter your EcoFlow User ID (or an advanced auth secret) first."); return; }
   S.userId=uid; S.authSecret=sec||null; S.serial=$("#serial").value.trim()||null;
   localStorage.setItem("ef_uid",uid); localStorage.setItem("ef_serial",$("#serial").value.trim()); if(sec) localStorage.setItem("ef_secret",sec);
+  setBusy(true); S.cancelled=false;
   try{
     setConn("work","Requesting device…");
     log("Requesting Bluetooth device…");
@@ -1245,46 +1290,114 @@ async function connect(){
     });
     log("Selected: "+(S.device.name||S.device.id));
     S.device.addEventListener("gattserverdisconnected",onDisconnect);
-    setConn("work","Connecting…");
-    S.server=await S.device.gatt.connect();
-    // find service/chars
-    let svc,proto;
-    for(const P of [NUS,RFCOMM]){
-      try{ svc=await S.server.getPrimaryService(P.service); proto=P; break; }catch(e){}
-    }
-    if(!svc) throw new Error("No known UART service found on device.");
-    S.writeCh=await svc.getCharacteristic(proto.write);
-    S.notifyCh=await svc.getCharacteristic(proto.notify);
-    await S.notifyCh.startNotifications();
-    S.notifyCh.addEventListener("characteristicvaluechanged",onNotification);
-    S.notifQueue=[]; S.notifWaiters=[];
-    resetLiveState();
-    log("GATT ready ("+(proto===NUS?"Nordic UART":"RFCOMM")+"). Starting handshake…");
-    setConn("work","Handshake…");
-
-    await ecdhExchange();
-    await getKeyInfo();
     if(!S.serial && !S.authSecret){
       // the serial is needed to derive the auth secret
       const guess=prompt("Enter the station's serial number (starts with D3N1…). Find it on the unit's label or screen → About.");
       if(!guess){ throw new Error("Serial number required to authenticate."); }
       S.serial=guess.trim(); $("#serial").value=S.serial; localStorage.setItem("ef_serial",S.serial);
     }
-    await doAuth();
+    // A connection attempt does not always get through, in Chrome on Android in
+    // particular, so connecting and the handshake are retried a few times.
+    S.connecting=true;
+    for(let attempt=1;;attempt++){
+      if(S.cancelled) throw new Error("Cancelled.");
+      try{
+        setConn("work",attempt>1?("Connecting… (try "+attempt+" of "+MAX_ATTEMPTS+")"):"Connecting…");
+        await openLink();
+        setConn("work","Handshake…");
+        S.step="key exchange"; await ecdhExchange();
+        S.step="session key";  await getKeyInfo();
+        S.step="authentication"; await doAuth();
+        break;
+      }catch(e){
+        if(S.cancelled) throw new Error("Cancelled.");
+        await sleep(500); // let a disconnect that is already under way arrive first
+        log("⚠ Try "+attempt+" failed during "+S.step+": "+e.message);
+        await closeLink();
+        if(/Auth rejected|No known UART service/.test(e.message) || attempt>=MAX_ATTEMPTS) throw e;
+        await sleep(1500);
+      }
+    }
+    S.connecting=false; setBusy(false);
   }catch(e){
+    S.connecting=false; setBusy(false);
     log("❌ "+e.message);
-    setConn("err","Error: "+e.message);
-    try{ S.device&&S.device.gatt.connected&&S.device.gatt.disconnect(); }catch(_){}
+    if(!S.cancelled && /GATT|NetworkError|did not finish|No auth confirmation/i.test(e.message+" "+e.name))
+      log("Tip: press Connect again; Chrome on Android often needs several tries. The unit serves one Bluetooth connection at a time, so also check that nothing else is connected to it (its screen shows a Bluetooth icon when something is).");
+    if(S.cancelled) setConn("","Not connected"); else setConn("err","Error: "+e.message);
+    await closeLink();
+    await sleep(300); await releaseDevice(); // no-op if the disconnect handler already did it
   }
 }
+async function openLink(){
+  // Reconnecting straight after a disconnect is unreliable: give both ends a moment.
+  const since=Date.now()-(S.lastDisconnectAt||0);
+  if(since<3000) await sleep(3000-since);
+  const t0=Date.now();
+  S.closedByPage=false;
+  S.step="connecting";
+  S.server=await withTimeout(S.device.gatt.connect(),12000,"Bluetooth connect");
+  await sleep(400); // discovering services immediately after connecting is unreliable on Android
+  S.step="service discovery";
+  let svc=null,proto=null;
+  for(let i=0;i<3 && !svc;i++){
+    for(const P of [NUS,RFCOMM]){
+      try{ svc=await S.server.getPrimaryService(P.service); proto=P; break; }catch(e){}
+    }
+    if(!svc){ if(!linkUp()) throw new Error("Link dropped during service discovery"); await sleep(400); }
+  }
+  if(!svc) throw new Error("No known UART service found on device.");
+  S.writeCh=await gattRetry("write characteristic",()=>svc.getCharacteristic(proto.write));
+  S.notifyCh=await gattRetry("notify characteristic",()=>svc.getCharacteristic(proto.notify));
+  S.step="enabling notifications";
+  S.notifyCh.addEventListener("characteristicvaluechanged",onNotification);
+  // In Chrome on Android this call sometimes stalls until the unit drops the link
+  // about ten seconds later. The stall is waited out; the caller then reconnects.
+  const starting=S.notifyCh.startNotifications(); starting.catch(()=>{});
+  const started=await Promise.race([starting.then(()=>true), sleep(3500).then(()=>false)]);
+  if(!started){
+    log("  Notifications are slow to start — waiting for the unit…");
+    setConn("work","Waiting for the unit…");
+    await withTimeout(starting,12000,"Enabling notifications");
+  }
+  S.notifying=true;
+  await sleep(200); // let the notification subscription settle before the first write
+  S.notifQueue=[]; S.notifWaiters=[]; writeChain=Promise.resolve();
+  resetLiveState();
+  log("Link ready in "+(Date.now()-t0)+" ms ("+(proto===NUS?"Nordic UART":"EcoFlow UART")+" service). Starting handshake…");
+}
+// Closes the link from this side: lets a write in flight finish and switches
+// notifications off first, so the Bluetooth stack is left in a clean state.
+async function closeLink(){
+  if(!linkUp()) return;
+  S.closedByPage=true;
+  await Promise.race([writeChain,sleep(1000)]);
+  if(S.notifyCh && S.notifying){
+    try{ await withTimeout(S.notifyCh.stopNotifications(),1500,"Stopping notifications"); }catch(_){}
+  }
+  S.notifying=false;
+  try{ if(linkUp()) S.device.gatt.disconnect(); }catch(_){}
+}
+// When a session is over, ask the browser to let go of the device where it can
+// (not in Chrome on Android), so the next connect starts from a fresh device object.
+async function releaseDevice(){
+  const d=S.device; if(!d) return;
+  S.device=null; S.server=null; S.writeCh=null; S.notifyCh=null;
+  try{ d.removeEventListener("gattserverdisconnected",onDisconnect); }catch(_){}
+  if(typeof d.forget!=="function") return;
+  try{ await d.forget(); }catch(_){}
+}
 function onDisconnect(){
-  log("Disconnected.");
+  log(S.closedByPage?"Disconnected.":"Disconnected (link dropped).");
+  S.closedByPage=false; S.notifying=false; S.lastDisconnectAt=Date.now();
   S.authed=false; pumpGen++;
+  if(S.connecting) return; // a retry is in progress; keep its status text
   setConn("","Not connected");
   showUI(false);
+  releaseDevice();
 }
 $("#btnConnect").addEventListener("click",connect);
-$("#btnDisconnect").addEventListener("click",()=>{ try{S.device.gatt.disconnect();}catch(e){} });
+$("#btnDisconnect").addEventListener("click",()=>{ closeLink(); });
 $("#btnCopyLog").addEventListener("click",()=>{navigator.clipboard.writeText(logEl.textContent);});
 $("#btnClearLog").addEventListener("click",()=>{logEl.textContent="";});
 

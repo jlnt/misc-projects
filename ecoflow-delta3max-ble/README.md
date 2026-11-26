@@ -58,6 +58,14 @@ Keep `ecoflow-credentials.js` private: anyone with those two values and
 Bluetooth range can control the unit. The page also remembers the values in the
 browser after connecting; **Forget saved values** clears them.
 
+## Connecting
+
+The page retries a failed connection by itself, up to six times, and the
+**Connect** button turns into **Cancel** while it does. Chrome on Android often
+needs several of those tries — roughly one attempt in three got through on the
+phone it was tested with — so connecting there can take up to a minute. Desktop
+Chrome and ChromeOS normally connect first time.
+
 ## Status
 
 Tested against one US Delta 3 Max (serial prefix `D3N1`). Reading settings and
