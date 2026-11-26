@@ -100,6 +100,7 @@
     <div>
       <h1>Delta 3 Max — Local Bluetooth Control</h1>
       <div class="sub">Runs in your browser · no EcoFlow app · no cloud</div>
+      <div class="sub"><span id="appVersion"></span> <a href="#" id="updateLink" class="hide">· newer version available — tap to update</a></div>
     </div>
   </header>
 
@@ -306,6 +307,8 @@ if("serviceWorker" in navigator && /^https?:$/.test(location.protocol)){
    Delta 3 Max local Bluetooth client — single file, no dependencies.
    ========================================================================= */
 
+// Shown under the title and on the first log line. Bump it with every change to this page.
+const APP_VERSION="1.0 (2026-11-26)";
 const $  = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const logEl = $("#log");
@@ -1452,7 +1455,19 @@ $("#btnForgetCreds").addEventListener("click",()=>{
     $("#credStatus").textContent=u?"Using values remembered by this browser.":"No credentials file found next to this page — load one or type the values in.";
   }
   for(const k in STEP) paintStep(k);
-  log("Ready.");
+  $("#appVersion").textContent="Version "+APP_VERSION;
+  log("Ready. Version "+APP_VERSION+".");
+  // When hosted, compare with the copy on the server and offer to update if it is newer.
+  if(/^https?:$/.test(location.protocol)){
+    fetch(location.pathname,{cache:"no-store"}).then(r=>r.ok?r.text():"").then(t=>{
+      const m=t.match(/const APP_VERSION="([^"]+)"/);
+      if(m && m[1]!==APP_VERSION){
+        log("A newer version is available: "+m[1]+".");
+        const a=$("#updateLink"); a.classList.remove("hide");
+        a.addEventListener("click",ev=>{ ev.preventDefault(); location.reload(); });
+      }
+    }).catch(()=>{}); // offline: nothing to compare with
+  }
   if(!("bluetooth" in navigator)) log("⚠ Web Bluetooth not detected in this browser.");
 })();
 </script>

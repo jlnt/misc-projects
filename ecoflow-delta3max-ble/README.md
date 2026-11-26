@@ -34,6 +34,9 @@ The hosted page contains no credentials. Type your User ID and serial number in,
 or pick your own credentials file with **Load credentials file…**. Everything
 still runs in your browser: the values are never sent to GitHub or anywhere else.
 
+The page shows its version under the title, and offers to update itself when a
+newer one has been published.
+
 ### Install it as an app (Android)
 
 Open the link above in Chrome, then choose **Install app** (or **Add to Home
