@@ -365,7 +365,7 @@ if("serviceWorker" in navigator && /^https?:$/.test(location.protocol)){
    ========================================================================= */
 
 // Shown under the title and on the first log line. Bump it with every change to this page.
-const APP_VERSION="1.5 (2026-11-26)";
+const APP_VERSION="1.6 (2026-11-26)";
 const $  = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const logEl = $("#log");
@@ -1050,8 +1050,17 @@ function parseTelemetry(payload){
   set("devStandby", pbUint(map,F.dev_standby));
   set("acStandby", pbUint(map,F.ac_standby));
   const dur=m=>Math.floor(m/60)+"h "+String(m%60).padStart(2,"0")+"m";
-  if(t.chgRem!==undefined) t.chgRemS=dur(t.chgRem);
-  if(t.dsgRem!==undefined) t.dsgRemS=dur(t.dsgRem);
+  // cms_chg_dsg_state: 0 = idle and 2 = charging have been observed on a unit; 1 is
+  // taken to be discharging only when the unit also reports output power.
+  set("chgState", pbUint(map,282));
+  const charging=t.chgState===2;
+  if(t.chgState!==undefined)
+    t.stateS=charging?"Charging":t.chgState===0?"Idle":(t.chgState===1 && t.powOut>0)?"Discharging":"State "+t.chgState;
+  // The unit sends a placeholder for whichever estimate does not apply, so show the
+  // charging estimate only while charging and the run-time estimate only otherwise.
+  const known=t.chgState!==undefined;
+  t.chgRemS=(t.chgRem!==undefined && (!known || charging))?dur(t.chgRem):undefined;
+  t.dsgRemS=(t.dsgRem!==undefined && (!known || !charging))?dur(t.dsgRem):undefined;
   renderTelemetry();
 }
 
@@ -1172,11 +1181,11 @@ function showUI(on){
   $("#btnDisconnect").classList.toggle("hide",!on);
 }
 const METRICS=[
-  ["soc","Battery","%",0],["powOut","Output","W",0],["powIn","Input","W",0],
+  ["soc","Battery","%",0],["stateS","Status","",0],["powOut","Output","W",0],["powIn","Input","W",0],
   ["acOutW","AC out","W",0],["acIn","AC in","W",0],["pv","Solar / DC in","W",0],
   ["dc12W","12V out","W",0],["usbc1W","USB-C 1","W",0],["usbc2W","USB-C 2","W",0],
   ["usba1W","USB-A 1","W",0],["usba2W","USB-A 2","W",0],
-  ["dsgRemS","Time to empty","",0],["chgRemS","Time to full","",0],
+  ["dsgRemS","Time to empty","",0],["chgRemS","Charging time left","",0],
   ["temp","Battery temp","°C",0],["errS","Errors","",0],
 ];
 function renderTelemetry(){
