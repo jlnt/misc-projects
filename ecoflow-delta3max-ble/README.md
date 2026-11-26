@@ -26,6 +26,15 @@ at your own risk.
   account's numeric **User ID** plus the unit's **serial number**. The unit checks
   both on every connection.
 
+### Finding your User ID
+
+The User ID is a long number that identifies your EcoFlow account; it is not your
+email address. The app does not show it, but EcoFlow's login server returns it
+when you sign in. The page walks you through this under **How do I find my User
+ID?**, with a snippet to paste into a browser console and a `curl` command for a
+terminal. Both send your email and password to EcoFlow's own login server and
+nowhere else, and you only need to do it once.
+
 ## Use it online
 
 Open **<https://jlnt.github.io/misc-projects/ecoflow-delta3max-ble/>**.
