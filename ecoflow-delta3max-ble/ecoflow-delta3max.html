@@ -317,7 +317,7 @@
     <div class="row">
       <button class="danger block" id="btnPowerOff">Power off unit</button>
     </div>
-    <p class="small muted" style="margin-top:8px">Turns the station fully off. You'll need to press the physical power button to turn it back on.</p>
+    <p class="small muted" style="margin-top:8px" id="powerOffHint">Turns the station fully off. You'll need to press the physical power button to turn it back on.</p>
   </section>
 
   <section id="diag" class="card hide">
@@ -365,7 +365,7 @@ if("serviceWorker" in navigator && /^https?:$/.test(location.protocol)){
    ========================================================================= */
 
 // Shown under the title and on the first log line. Bump it with every change to this page.
-const APP_VERSION="1.4 (2026-11-26)";
+const APP_VERSION="1.5 (2026-11-26)";
 const $  = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const logEl = $("#log");
@@ -1017,6 +1017,7 @@ function parseTelemetry(payload){
   set("acOutW",outW(368)); set("usbc1W",outW(11)); set("usbc2W",outW(12));
   set("usba1W",outW(9)); set("usba2W",outW(10)); set("dc12W",outW(37));
   set("chgMode", pbUint(map,124)); // plug_in_info_ac_in_chg_mode
+  set("acPlugged", pbBool(map,61)); // plug_in_info_ac_in_flag: a charging cable is connected
   set("dcStandby", pbUint(map,20)); set("lcd", pbUint(map,5)); set("mem", pbBool(map,147));
   { // error codes: this unit sends per-module codes rather than the summary field 1
     const e=(t.err=t.err||{}); let seen=false;
@@ -1206,6 +1207,12 @@ function renderTelemetry(){
   reflectSel("dcStandby", t.dcStandby);
   reflectSel("chgMode", t.chgMode);
   setVal("lcd", t.lcd);
+  // The unit refuses to power off while it has a charging input (the manual says the
+  // same of its own power button), so say so instead of sending a command it ignores.
+  $("#btnPowerOff").disabled=!!t.acPlugged;
+  $("#powerOffHint").textContent=t.acPlugged
+    ? "The unit will not power off while a charging cable is connected. Unplug it from the wall first."
+    : "Turns the station fully off. You'll need to press the physical power button to turn it back on.";
   setVal("chgMax", t.maxChg);
   setVal("dsgMin", t.minDsg);
   setVal("backup", t.backupRev!==undefined? t.backupRev : t.backupSoc);
@@ -1293,7 +1300,7 @@ $$("button[data-step]").forEach(btn=>{
 });
 $("#btnPowerOff").addEventListener("click",async()=>{
   if(!confirm("Power off the Delta 3 Max now? You'll need the physical button to turn it back on.")) return;
-  try{ await CMD.powerOff(); log("power-off sent"); }catch(e){ log(e.message); }
+  try{ await CMD.powerOff(); log("Power-off sent. If the unit stays on, check that nothing is charging it."); }catch(e){ log(e.message); }
 });
 $("#btnDiag").addEventListener("click",async()=>{
   const o=$("#diagOut"); o.textContent="Collecting for 8 seconds…";
