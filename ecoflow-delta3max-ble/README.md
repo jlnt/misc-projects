@@ -34,6 +34,14 @@ The hosted page contains no credentials. Type your User ID and serial number in,
 or pick your own credentials file with **Load credentials file…**. Everything
 still runs in your browser: the values are never sent to GitHub or anywhere else.
 
+### Install it as an app (Android)
+
+Open the link above in Chrome, then choose **Install app** (or **Add to Home
+screen**) from Chrome's menu. It then opens full-screen from its own icon, and
+after the first visit it loads with no internet connection — useful during a
+power outage. Enter your credentials and connect once; the browser remembers
+them on that phone. Chrome still asks you to pick the unit each time you connect.
+
 ## Use it from a local copy
 
 1. Download `ecoflow-delta3max.html`.
