@@ -1,0 +1,10 @@
+misc-projects
+
+ecoflow-delta3max-ble
+---------------------
+The Bluetooth protocol implementation in ecoflow-delta3max.html (handshake,
+packet framing, session key table and protobuf field numbers) is based on
+ha-ef-ble by rabits and contributors, licensed under the Apache License 2.0:
+https://github.com/rabits/ha-ef-ble
+
+This project is not affiliated with or endorsed by EcoFlow.

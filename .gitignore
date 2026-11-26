@@ -1,0 +1,2 @@
+# Private: holds the EcoFlow User ID and serial number. Never commit.
+ecoflow-credentials.js
