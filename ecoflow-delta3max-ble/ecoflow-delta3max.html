@@ -193,7 +193,7 @@
       <select data-sel="devStandby" disabled><option value="" disabled selected>—</option><option value="0">Never</option><option value="30">30 min</option><option value="60">1 hour</option><option value="120">2 hours</option><option value="240">4 hours</option><option value="360">6 hours</option><option value="720">12 hours</option><option value="1440">24 hours</option></select>
     </div>
     <div class="ctl">
-      <div class="meta"><b>AC auto-off</b><div>AC sockets switch off after this long under low draw (applies to both AC groups)</div></div>
+      <div class="meta"><b>AC auto-off</b><div>AC sockets switch off after this long under low draw</div></div>
       <select data-sel="acStandby" disabled><option value="" disabled selected>—</option><option value="0">Never</option><option value="30">30 min</option><option value="60">1 hour</option><option value="120">2 hours</option><option value="240">4 hours</option><option value="360">6 hours</option><option value="720">12 hours</option><option value="1440">24 hours</option></select>
     </div>
     <div class="ctl">
@@ -308,7 +308,7 @@ if("serviceWorker" in navigator && /^https?:$/.test(location.protocol)){
    ========================================================================= */
 
 // Shown under the title and on the first log line. Bump it with every change to this page.
-const APP_VERSION="1.1 (2026-11-26)";
+const APP_VERSION="1.2 (2026-11-26)";
 const $  = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const logEl = $("#log");
@@ -1032,7 +1032,7 @@ const CMD={
   mem:(on)=>sendConfig(a=>PB.bool(a,141,on)),          // cfg_output_power_off_memory
   lcd:(v)=>sendConfig(a=>PB.uint(a,14,v)),             // cfg_lcd_light, 0-100
   devStandby:(min)=>sendConfig(a=>PB.uint(a,13,min)),  // minutes, 0 = never
-  acStandby:(min)=>sendConfig(a=>{ PB.uint(a,10,min); PB.uint(a,572,min); }), // AC + AC group 2
+  acStandby:(min)=>sendConfig(a=>PB.uint(a,10,min)),
   dcStandby:(min)=>sendConfig(a=>PB.uint(a,11,min)),
   // cfg_ac_in_chg_mode: 0 custom watts, 1 optimized, 2 silent. Custom is sent with the
   // current watt limit, the same pair ha-ef-ble sends when it sets the charge speed.
