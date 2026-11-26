@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Offline cache for the Delta 3 Max page, so it opens with no internet connection.
-// Network first (so updates arrive when online), cached copy when offline or slow.
+// Network first, always checking with the server, so updates arrive as soon as
+// they are published; the cached copy is used when offline or slow.
 const CACHE = "delta3max-v1";
 const SHELL = [
   "./",
@@ -41,7 +42,9 @@ self.addEventListener("fetch", (event) => {
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);
     const cached = await cache.match(req, { ignoreSearch: true });
-    const network = fetch(req).then((res) => {
+    // "no-cache" makes the browser check with the server instead of trusting its
+    // own HTTP cache, so a newly published version shows up on the next open.
+    const network = fetch(req.url, { cache: "no-cache" }).then((res) => {
       if (res.ok) cache.put(req, res.clone());
       return res;
     });
