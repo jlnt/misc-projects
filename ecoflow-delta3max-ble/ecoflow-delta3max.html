@@ -74,8 +74,9 @@
   .switch input:checked+.slider{background:color-mix(in srgb,var(--accent) 30%,transparent);border-color:var(--accent)}
   .switch input:checked+.slider:before{transform:translateX(22px);background:var(--accent)}
   .switch input:disabled+.slider{opacity:.4}
-  .stepper{display:flex;align-items:center;gap:8px}
+  .stepper{display:flex;align-items:center;gap:6px;flex:0 0 auto}
   .stepper button{padding:6px 12px;font-size:17px;line-height:1}
+  .stepper button.n{padding:8px 7px;font-size:13px;min-width:36px}
   .stepper .val{min-width:62px;text-align:center;font-weight:650;font-size:16px}
   .muted{color:var(--muted)}
   .small{font-size:12.5px}
@@ -207,11 +208,11 @@
 
     <div class="ctl">
       <div class="meta"><b>Charge limit (max)</b><div>Store below 100% to extend battery life</div></div>
-      <div class="stepper"><button data-step="chgMax" data-d="-5">−</button><span class="val" id="valChgMax">—</span><button data-step="chgMax" data-d="5">+</button></div>
+      <div class="stepper"><button class="n" data-step="chgMax" data-d="-5">−5</button><button class="n" data-step="chgMax" data-d="-1">−1</button><span class="val" id="valChgMax">—</span><button class="n" data-step="chgMax" data-d="1">+1</button><button class="n" data-step="chgMax" data-d="5">+5</button></div>
     </div>
     <div class="ctl">
       <div class="meta"><b>Discharge limit (min)</b><div>Reserve floor the unit won't drain past</div></div>
-      <div class="stepper"><button data-step="dsgMin" data-d="-5">−</button><span class="val" id="valDsgMin">—</span><button data-step="dsgMin" data-d="5">+</button></div>
+      <div class="stepper"><button class="n" data-step="dsgMin" data-d="-5">−5</button><button class="n" data-step="dsgMin" data-d="-1">−1</button><span class="val" id="valDsgMin">—</span><button class="n" data-step="dsgMin" data-d="1">+1</button><button class="n" data-step="dsgMin" data-d="5">+5</button></div>
     </div>
 
     <div class="ctl">
@@ -308,7 +309,7 @@ if("serviceWorker" in navigator && /^https?:$/.test(location.protocol)){
    ========================================================================= */
 
 // Shown under the title and on the first log line. Bump it with every change to this page.
-const APP_VERSION="1.2 (2026-11-26)";
+const APP_VERSION="1.3 (2026-11-26)";
 const $  = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const logEl = $("#log");
@@ -1214,19 +1215,24 @@ $$("button[data-step]").forEach(btn=>{
       log("⚠ "+key+": current value not read from the unit yet — nothing sent. Press “Refresh current settings”.");
       return;
     }
-    s._touched=Date.now();
+    const tapped=s._touched=Date.now();
     const delta=(key==="screen")?d*60:d; // screen buttons step in minutes, the value is in seconds
     s.v=Math.max(s.min,Math.min(s.max,s.v+delta));
     paintStep(key);
-    try{
-      if(key==="chgMax") await CMD.chgMax(s.v);
-      else if(key==="dsgMin") await CMD.dsgMin(s.v);
-      else if(key==="backup"){ if(S.telem.selfPowered) await CMD.backup(s.v,true); else await CMD.backupLevel(s.v); } // don't switch backup mode on as a side effect
-      else if(key==="lcd") await CMD.lcd(s.v);
-      else if(key==="chgSpeed") await CMD.chgSpeed(s.v);
-      else if(key==="screen") await CMD.screen(s.v);
-    }catch(e){ log("set "+key+" failed: "+e.message); }
-    setTimeout(()=>{s._touched=0;},5000);
+    // Several quick taps send one command, with the value they end on.
+    clearTimeout(s._timer);
+    s._timer=setTimeout(async()=>{
+      try{
+        if(key==="chgMax") await CMD.chgMax(s.v);
+        else if(key==="dsgMin") await CMD.dsgMin(s.v);
+        else if(key==="backup"){ if(S.telem.selfPowered) await CMD.backup(s.v,true); else await CMD.backupLevel(s.v); } // don't switch backup mode on as a side effect
+        else if(key==="lcd") await CMD.lcd(s.v);
+        else if(key==="chgSpeed") await CMD.chgSpeed(s.v);
+        else if(key==="screen") await CMD.screen(s.v);
+      }catch(e){ log("set "+key+" failed: "+e.message); }
+      // let readings from the unit repaint the value again, unless tapped since
+      setTimeout(()=>{ if(s._touched===tapped) s._touched=0; },5000);
+    },600);
   });
 });
 $("#btnPowerOff").addEventListener("click",async()=>{
